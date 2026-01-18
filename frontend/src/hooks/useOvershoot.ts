@@ -6,14 +6,6 @@ interface OvershootResult {
   timestamp?: string;
 }
 
-interface RealtimeVisionConfig {
-  apiUrl: string;
-  apiKey: string;
-  prompt: string;
-  onResult: (result: OvershootResult) => void;
-  onError?: (error: Error) => void;
-}
-
 // We'll dynamically import the SDK or use a mock for development
 interface RealtimeVision {
   start: (source?: MediaStream | HTMLVideoElement) => Promise<void>;
