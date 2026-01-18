@@ -31,13 +31,7 @@ export default function MobileCameraView({ cameraId }: MobileCameraViewProps) {
   }, []);
 
   // Initialize Overshoot
-  const { isActive, hasPermission } = useOvershoot({
-    onDescription: handleOvershootDescription,
-    onError: handleOvershootError,
-    enabled: connected && isStreaming,
-    sourceType: 'camera',
-  });
-
+  
   // Start camera preview
   const startCamera = useCallback(async () => {
     try {
