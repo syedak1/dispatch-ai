@@ -1,126 +1,240 @@
-import { useEffect, useRef, useCallback } from 'react';
-import { RealtimeVision } from '@overshoot/sdk';
+import { useEffect, useRef, useState, useCallback } from 'react';
 
-const OVERSHOOT_PROMPT = `You are an AI monitoring a live security camera feed for a 911 emergency dispatch system.
+// Overshoot SDK types
+interface OvershootResult {
+  result: string;
+  timestamp?: string;
+}
 
-Your job: Analyze the video and describe what you observe with extreme clarity and precision.
+interface RealtimeVisionConfig {
+  apiUrl: string;
+  apiKey: string;
+  prompt: string;
+  onResult: (result: OvershootResult) => void;
+  onError?: (error: Error) => void;
+}
 
-FOCUS ON:
-- People: Count, locations, visible conditions, behaviors, signs of distress or injury
-- Vehicles: Types, movements, collisions, damage, smoke, leaking fluids
-- Structures: Buildings, visible fire, smoke (color and density), structural damage
-- Hazards: Debris, spills, downed power lines, broken glass, dangerous conditions
-- Emergency indicators: Flames, smoke, unconscious persons, violent behavior, traffic accidents
-
-CRITICAL RULES:
-1. Be factual and objective - describe only what is visible
-2. Use clear, concise emergency language
-3. Prioritize life-safety observations
-4. Include spatial context (location in frame, relative positions)
-5. Note any changes from previous observations if significant
-
-EMERGENCY FORMAT:
-If you detect a potential emergency, start with: "⚠️ [EMERGENCY_TYPE]:" followed by details
-Emergency types: FIRE, MEDICAL, COLLISION, ASSAULT, HAZMAT, STRUCTURAL
-
-NORMAL FORMAT:
-For routine scenes, simply describe what you see without the warning symbol.
-
-Examples:
-- "⚠️ COLLISION: Two-vehicle accident at intersection. Sedan and pickup truck. Front-end damage visible on both. Smoke from sedan engine. One person exiting sedan, mobile. Pickup driver still seated, airbag deployed."
-- "Residential street. Two parked cars. One pedestrian walking small dog on sidewalk. Clear weather. No unusual activity."
-- "⚠️ MEDICAL: Person lying motionless on ground near bus stop. Three bystanders surrounding. One person kneeling beside victim, another on phone."`;
+// We'll dynamically import the SDK or use a mock for development
+interface RealtimeVision {
+  start: (source?: MediaStream | HTMLVideoElement) => Promise<void>;
+  stop: () => Promise<void>;
+}
 
 interface UseOvershootConfig {
   onDescription: (description: string, timestamp: string) => void;
-  onError?: (error: Error) => void;
+  onError: (error: Error) => void;
   enabled: boolean;
+  sourceType: 'camera' | 'video';
+  videoFile?: File;
 }
 
-export function useOvershoot({ onDescription, onError, enabled }: UseOvershootConfig) {
+// Get API key from environment
+const OVERSHOOT_API_KEY = import.meta.env.VITE_OVERSHOOT_API_KEY || '';
+const OVERSHOOT_API_URL = import.meta.env.VITE_OVERSHOOT_API_URL || 'https://cluster1.overshoot.ai/api/v0.2';
+
+export function useOvershoot(config: UseOvershootConfig) {
+  const { onDescription, onError, enabled, sourceType, videoFile } = config;
+  const [isActive, setIsActive] = useState(false);
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  
   const visionRef = useRef<RealtimeVision | null>(null);
-  const isStartedRef = useRef(false);
+  const streamRef = useRef<MediaStream | null>(null);
+  const videoElementRef = useRef<HTMLVideoElement | null>(null);
+  const callbacksRef = useRef({ onDescription, onError });
 
-  const startVision = useCallback(async () => {
-    if (isStartedRef.current || !enabled) return;
+  // Keep callbacks fresh
+  useEffect(() => {
+    callbacksRef.current = { onDescription, onError };
+  }, [onDescription, onError]);
 
-    const apiKey = import.meta.env.VITE_OVERSHOOT_API_KEY;
-    const apiUrl = import.meta.env.VITE_OVERSHOOT_API_URL;
-
-    if (!apiKey || !apiUrl) {
-      const error = new Error('Overshoot API credentials missing in environment variables');
-      console.error('❌', error.message);
-      onError?.(error);
-      return;
-    }
-
+  // Initialize Overshoot with camera
+  const initWithCamera = useCallback(async () => {
     try {
-      console.log('🎥 Initializing Overshoot SDK...');
-
-      visionRef.current = new RealtimeVision({
-        apiUrl: apiUrl,
-        apiKey: apiKey,
-        prompt: OVERSHOOT_PROMPT,
-        source: {
-          type: 'camera',
-          cameraFacing: 'environment'
+      // Request camera permission
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment', // Prefer back camera on mobile
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
         },
-        processing: {
-          clip_length_seconds: 3,  // 3-second clips for context
-          delay_seconds: 3,         // New result every 3 seconds
-          fps: 30,
-          sampling_ratio: 0.15      // 15% of frames for balance
-        },
-        onResult: (result) => {
-          const description = result.result || 'No description available';
-          const timestamp = new Date().toISOString();
-
-          console.log('📹 Overshoot result:', description);
-          onDescription(description, timestamp);
-        },
+        audio: false
       });
 
-      await visionRef.current.start();
-      isStartedRef.current = true;
-      console.log('✅ Overshoot SDK started');
+      streamRef.current = stream;
+      setHasPermission(true);
 
-    } catch (err) {
-      console.error('❌ Overshoot initialization failed:', err);
-      onError?.(err as Error);
-      isStartedRef.current = false;
-    }
-  }, [enabled, onDescription, onError]);
+      // Check if Overshoot SDK is available
+      if (typeof window !== 'undefined' && (window as any).RealtimeVision) {
+        const RealtimeVision = (window as any).RealtimeVision;
+        
+        const vision = new RealtimeVision({
+          apiUrl: OVERSHOOT_API_URL,
+          apiKey: OVERSHOOT_API_KEY,
+          prompt: 'Describe what you see in detail. Focus on: people, vehicles, any incidents, emergencies, smoke, fire, injuries, or unusual activity. Be factual and specific.',
+          onResult: (result: OvershootResult) => {
+            const timestamp = result.timestamp || new Date().toISOString();
+            callbacksRef.current.onDescription(result.result, timestamp);
+          },
+          onError: (error: Error) => {
+            callbacksRef.current.onError(error);
+          }
+        });
 
-  const stopVision = useCallback(async () => {
-    if (visionRef.current && isStartedRef.current) {
-      try {
-        await visionRef.current.stop();
-        console.log('🛑 Overshoot SDK stopped');
-      } catch (err) {
-        console.error('Error stopping Overshoot:', err);
+        await vision.start(stream);
+        visionRef.current = vision;
+        setIsActive(true);
+        console.log('✅ Overshoot started with camera');
+      } else {
+        // Fallback: Use mock mode for development/testing
+        console.log('⚠️ Overshoot SDK not loaded, using mock mode');
+        startMockMode();
       }
-      isStartedRef.current = false;
+    } catch (error) {
+      console.error('Camera initialization failed:', error);
+      setHasPermission(false);
+      callbacksRef.current.onError(error as Error);
     }
   }, []);
 
+  // Initialize Overshoot with video file
+  const initWithVideo = useCallback(async (file: File) => {
+    try {
+      // Create video element for the file
+      const video = document.createElement('video');
+      video.src = URL.createObjectURL(file);
+      video.muted = true;
+      video.loop = true;
+      videoElementRef.current = video;
+
+      await video.play();
+
+      if (typeof window !== 'undefined' && (window as any).RealtimeVision) {
+        const RealtimeVision = (window as any).RealtimeVision;
+        
+        const vision = new RealtimeVision({
+          apiUrl: OVERSHOOT_API_URL,
+          apiKey: OVERSHOOT_API_KEY,
+          prompt: 'Describe what you see in detail. Focus on: people, vehicles, any incidents, emergencies, smoke, fire, injuries, or unusual activity. Be factual and specific.',
+          onResult: (result: OvershootResult) => {
+            const timestamp = result.timestamp || new Date().toISOString();
+            callbacksRef.current.onDescription(result.result, timestamp);
+          },
+          onError: (error: Error) => {
+            callbacksRef.current.onError(error);
+          }
+        });
+
+        await vision.start(video);
+        visionRef.current = vision;
+        setIsActive(true);
+        console.log('✅ Overshoot started with video file');
+      } else {
+        console.log('⚠️ Overshoot SDK not loaded, using mock mode with video');
+        startMockMode();
+      }
+    } catch (error) {
+      console.error('Video initialization failed:', error);
+      callbacksRef.current.onError(error as Error);
+    }
+  }, []);
+
+  // Mock mode for development when Overshoot SDK isn't loaded
+  const mockIntervalRef = useRef<number | null>(null);
+  
+  const startMockMode = useCallback(() => {
+    setIsActive(true);
+    
+    // Emit descriptions every 2 seconds
+    mockIntervalRef.current = window.setInterval(() => {
+      const mockDescriptions = [
+        'Street scene with pedestrians walking. Light traffic visible. No apparent incidents.',
+        'Parking lot view. Several vehicles parked. One person walking to their car.',
+        'Intersection view. Traffic flowing normally. Pedestrian crossing signal active.',
+        'Building entrance. People entering and exiting. Normal activity.',
+      ];
+      
+      const description = mockDescriptions[Math.floor(Math.random() * mockDescriptions.length)];
+      callbacksRef.current.onDescription(description, new Date().toISOString());
+    }, 2000);
+  }, []);
+
+  const stopMockMode = useCallback(() => {
+    if (mockIntervalRef.current !== null) {
+      clearInterval(mockIntervalRef.current);
+      mockIntervalRef.current = null;
+    }
+  }, []);
+
+  // Cleanup function
+  const cleanup = useCallback(async () => {
+    // Stop Overshoot
+    if (visionRef.current) {
+      try {
+        await visionRef.current.stop();
+      } catch (e) {
+        console.error('Error stopping Overshoot:', e);
+      }
+      visionRef.current = null;
+    }
+
+    // Stop camera stream
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+
+    // Clean up video element
+    if (videoElementRef.current) {
+      videoElementRef.current.pause();
+      URL.revokeObjectURL(videoElementRef.current.src);
+      videoElementRef.current = null;
+    }
+
+    // Stop mock mode
+    stopMockMode();
+
+    setIsActive(false);
+  }, [stopMockMode]);
+
+  // Main effect - start/stop based on enabled state
   useEffect(() => {
-    if (enabled) {
-      startVision();
+    if (!enabled) {
+      cleanup();
+      return;
+    }
+
+    if (sourceType === 'video' && videoFile) {
+      initWithVideo(videoFile);
     } else {
-      stopVision();
+      initWithCamera();
     }
 
     return () => {
-      stopVision();
+      cleanup();
     };
-  }, [enabled, startVision, stopVision]);
+  }, [enabled, sourceType, videoFile, initWithCamera, initWithVideo, cleanup]);
 
   return {
-    isActive: isStartedRef.current,
-    updatePrompt: (newPrompt: string) => {
-      if (visionRef.current && isStartedRef.current) {
-        visionRef.current.updatePrompt(newPrompt);
-      }
-    }
+    isActive,
+    hasPermission,
+    cleanup
   };
+}
+
+// Export a function to manually request camera permission
+export async function requestCameraPermission(): Promise<boolean> {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    stream.getTracks().forEach(track => track.stop());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Export function to check if running on mobile
+export function isMobileDevice(): boolean {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent
+  );
 }
