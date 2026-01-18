@@ -10,28 +10,43 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-# Load environment variables from .env file
-from pathlib import Path
-env_path = Path(__file__).parent.parent.parent / ".env"  # Three levels up: main.py -> app -> backend -> nexhacks
-load_dotenv(dotenv_path=env_path)
-print(f"📂 Loading .env from: {env_path}")
-print(f"📂 .env exists: {env_path.exists()}")
-print(f"🔑 GEMINI_API_KEY loaded: {os.getenv('GEMINI_API_KEY')[:20]}... (length: {len(os.getenv('GEMINI_API_KEY', ''))})")
+# Load environment variables
+load_dotenv()
 
 # Import our services
-from app.services.compression import compress_text
 from app.services.orchestrator import classify_incident
 from app.agents.fire_agent import run_fire_agent
 from app.agents.ems_agent import run_ems_agent
 from app.agents.police_agent import run_police_agent
-from app.services.pheonix_tracer import init_phoenix, log_trace
+
+# Try to import optional services
+try:
+    from app.services.compression import compress_text
+    HAS_COMPRESSION = True
+except ImportError:
+    HAS_COMPRESSION = False
+    async def compress_text(text: str, aggressiveness: float = 0.5) -> str:
+        return text
+
+try:
+    from app.services.phoenix_tracer import init_phoenix, log_trace
+    HAS_PHOENIX = True
+except ImportError:
+    HAS_PHOENIX = False
+    def init_phoenix(): pass
+    def log_trace(event_name: str, data: dict): 
+        print(f"📊 [TRACE:{event_name}] {data}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     print("🚀 Starting DispatchAI Backend...")
-    init_phoenix()
+    print(f"   GEMINI_API_KEY: {'✓ Set' if os.getenv('GEMINI_API_KEY') else '✗ Missing'}")
+    print(f"   Compression: {'✓ Enabled' if HAS_COMPRESSION else '✗ Disabled'}")
+    print(f"   Phoenix: {'✓ Enabled' if HAS_PHOENIX else '✗ Disabled'}")
+    if HAS_PHOENIX:
+        init_phoenix()
     yield
     print("👋 Shutting down...")
 
@@ -41,23 +56,33 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Allow frontend to connect
+# CORS - Allow your Vercel frontend
+# UPDATE THESE WITH YOUR ACTUAL DOMAINS
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    # Add your Vercel URLs here:
+    # "https://your-app.vercel.app",
+    # "https://dispatchai.vercel.app",
+]
+
+# Also allow any vercel.app subdomain for preview deployments
+import re
+def is_allowed_origin(origin: str) -> bool:
+    if origin in ALLOWED_ORIGINS:
+        return True
+    if origin and re.match(r"https://.*\.vercel\.app$", origin):
+        return True
+    return False
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "https://dispatch-pgk1dhflt-sajjads-projects-30e4de3e.vercel.app/",  # ADD YOUR VERCEL URL
-        "https://*.vercel.app",  # Allow all Vercel preview URLs
-    ],
+    allow_origins=["*"],  # In production, use specific origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Serve video clips as static files
-os.makedirs("clips", exist_ok=True)
-app.mount("/clips", StaticFiles(directory="clips"), name="clips")
 
 
 class ConnectionManager:
@@ -74,12 +99,24 @@ class ConnectionManager:
         self.camera_connections[camera_id] = websocket
         self.text_buffers[camera_id] = []
         self.buffer_start_times[camera_id] = datetime.now()
-        print(f"📷 Camera {camera_id} connected")
+        print(f"📷 Camera {camera_id} connected (total: {len(self.camera_connections)})")
+        
+        # Notify dispatchers
+        await self.broadcast_to_dispatchers({
+            "type": "camera_connected",
+            "camera_id": camera_id
+        })
     
     async def connect_dispatcher(self, websocket: WebSocket):
         await websocket.accept()
         self.dispatcher_connections.append(websocket)
-        print(f"👤 Dispatcher connected. Total: {len(self.dispatcher_connections)}")
+        print(f"👤 Dispatcher connected (total: {len(self.dispatcher_connections)})")
+        
+        # Send current camera list
+        await websocket.send_json({
+            "type": "camera_list",
+            "cameras": list(self.camera_connections.keys())
+        })
     
     def disconnect_camera(self, camera_id: str):
         if camera_id in self.camera_connections:
@@ -93,7 +130,7 @@ class ConnectionManager:
     def disconnect_dispatcher(self, websocket: WebSocket):
         if websocket in self.dispatcher_connections:
             self.dispatcher_connections.remove(websocket)
-        print(f"👤 Dispatcher disconnected. Total: {len(self.dispatcher_connections)}")
+        print(f"👤 Dispatcher disconnected (total: {len(self.dispatcher_connections)})")
     
     async def broadcast_to_dispatchers(self, message: dict):
         """Send message to all connected dispatchers."""
@@ -104,15 +141,14 @@ class ConnectionManager:
             except:
                 disconnected.append(ws)
         
-        # Clean up disconnected
         for ws in disconnected:
             self.disconnect_dispatcher(ws)
 
 
 manager = ConnectionManager()
 
-# Configuration
-BUFFER_DURATION_SECONDS = 30  # Collect 30 seconds before processing
+# Configuration - CHANGE THIS TO ADJUST BUFFER TIME
+BUFFER_DURATION_SECONDS = int(os.getenv("BUFFER_DURATION_SECONDS", "15"))  # Reduced to 15s for faster demos
 
 
 @app.get("/")
@@ -121,7 +157,8 @@ async def root():
         "status": "running",
         "service": "DispatchAI Backend",
         "cameras_connected": len(manager.camera_connections),
-        "dispatchers_connected": len(manager.dispatcher_connections)
+        "dispatchers_connected": len(manager.dispatcher_connections),
+        "buffer_duration": BUFFER_DURATION_SECONDS
     }
 
 
@@ -143,7 +180,6 @@ async def camera_websocket(websocket: WebSocket, camera_id: str):
             data = await websocket.receive_json()
             
             if data.get("type") == "overshoot_result":
-                # Store the description
                 description = data.get("description", "")
                 timestamp = data.get("timestamp", datetime.now().isoformat())
                 
@@ -152,20 +188,19 @@ async def camera_websocket(websocket: WebSocket, camera_id: str):
                     "timestamp": timestamp
                 })
                 
-                print(f"📝 [{camera_id}] {description[:50]}...")
+                print(f"📝 [{camera_id}] {description[:60]}...")
                 
                 # Check if we should process the buffer
                 elapsed = (datetime.now() - manager.buffer_start_times[camera_id]).total_seconds()
                 
                 if elapsed >= BUFFER_DURATION_SECONDS:
                     print(f"⏰ [{camera_id}] Buffer full ({elapsed:.0f}s), processing...")
-                    await process_buffer(camera_id)
+                    asyncio.create_task(process_buffer(camera_id))
             
-            elif data.get("type") == "clip_ready":
-                # Frontend has saved a clip
-                clip_url = data.get("url")
-                incident_id = data.get("incident_id")
-                print(f"🎬 [{camera_id}] Clip ready for {incident_id}: {clip_url}")
+            elif data.get("type") == "force_process":
+                # Allow manual trigger for testing
+                print(f"🔧 [{camera_id}] Force processing buffer...")
+                asyncio.create_task(process_buffer(camera_id))
                 
     except WebSocketDisconnect:
         manager.disconnect_camera(camera_id)
@@ -202,7 +237,7 @@ async def dispatcher_websocket(websocket: WebSocket):
                 incident_id = data.get("incident_id")
                 reason = data.get("reason", "No reason provided")
                 dispatcher_id = data.get("dispatcher_id", "unknown")
-                print(f"❌ Incident {incident_id} REJECTED by {dispatcher_id}: {reason}")
+                print(f"❌ Incident {incident_id} REJECTED: {reason}")
                 
                 log_trace("dispatcher_decision", {
                     "incident_id": incident_id,
@@ -222,11 +257,6 @@ async def dispatcher_websocket(websocket: WebSocket):
 async def process_buffer(camera_id: str):
     """
     Process the accumulated text buffer for a camera.
-    1. Combine all text
-    2. Compress with Token Company
-    3. Classify with Orchestrator
-    4. Run relevant agents
-    5. Generate and send alert
     """
     buffer = manager.text_buffers.get(camera_id, [])
     
@@ -240,11 +270,14 @@ async def process_buffer(camera_id: str):
     
     # Combine all descriptions
     raw_text = "\n".join([item["text"] for item in buffer])
-    print(f"📄 [{camera_id}] Combined text: {len(raw_text)} characters")
+    print(f"📄 [{camera_id}] Processing {len(buffer)} descriptions ({len(raw_text)} chars)")
     
-    # Step 1: COMPRESS
-    print(f"🗜️ [{camera_id}] Compressing...")
-    compressed_text = await compress_text(raw_text)
+    # Step 1: COMPRESS (if available)
+    if HAS_COMPRESSION:
+        print(f"🗜️ [{camera_id}] Compressing...")
+        compressed_text = await compress_text(raw_text)
+    else:
+        compressed_text = raw_text
     
     # Step 2: CLASSIFY
     print(f"🧠 [{camera_id}] Classifying...")
@@ -261,7 +294,7 @@ async def process_buffer(camera_id: str):
         print(f"✨ [{camera_id}] No emergency detected")
         return
     
-    print(f"🚨 [{camera_id}] Emergency detected: {classification.get('incident_type')}")
+    print(f"🚨 [{camera_id}] EMERGENCY: {classification.get('incident_type')} - {classification.get('severity')}")
     
     # Step 3: RUN AGENTS
     agents_to_run = classification.get("activate_agents", [])
@@ -283,9 +316,9 @@ async def process_buffer(camera_id: str):
         try:
             result = await coro
             agent_reports[agent_name] = {"activated": True, **result}
-            print(f"  ✓ {agent_name} agent complete")
+            print(f"  ✓ {agent_name} complete")
         except Exception as e:
-            print(f"  ✗ {agent_name} agent error: {e}")
+            print(f"  ✗ {agent_name} error: {e}")
             agent_reports[agent_name] = {"activated": True, "error": str(e)}
     
     # Mark non-activated agents
@@ -297,7 +330,7 @@ async def process_buffer(camera_id: str):
             }
     
     # Step 4: BUILD REPORT
-    incident_id = f"inc_{camera_id}_{int(datetime.now().timestamp())}"
+    incident_id = f"INC_{camera_id}_{int(datetime.now().timestamp())}"
     
     report = {
         "id": incident_id,
@@ -315,10 +348,10 @@ async def process_buffer(camera_id: str):
         "clip": {
             "start_time": buffer[0]["timestamp"] if buffer else None,
             "end_time": buffer[-1]["timestamp"] if buffer else None,
-            "url": None  # Will be set when frontend provides clip
+            "url": None
         },
         "status": "PENDING_REVIEW",
-        "raw_context": compressed_text[:500]  # First 500 chars for reference
+        "raw_context": compressed_text[:500]
     }
     
     log_trace("report_generated", {
@@ -329,31 +362,21 @@ async def process_buffer(camera_id: str):
     })
     
     # Step 5: SEND ALERT TO DISPATCHERS
-    print(f"📢 [{camera_id}] Sending alert to dispatchers...")
+    print(f"📢 [{camera_id}] Sending alert: {incident_id}")
     await manager.broadcast_to_dispatchers({
         "type": "alert",
         "data": report
     })
     
-    # Also tell the camera frontend to prepare a clip
-    if camera_id in manager.camera_connections:
-        try:
-            await manager.camera_connections[camera_id].send_json({
-                "type": "request_clip",
-                "incident_id": incident_id,
-                "duration_seconds": 15
-            })
-        except:
-            pass
-    
-    print(f"✅ [{camera_id}] Alert sent: {incident_id}")
+    print(f"✅ [{camera_id}] Alert sent!")
 
 
 if __name__ == "__main__":
     import uvicorn
+    port = int(os.getenv("PORT", 8000))
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
-        port=8000,
-        reload=True  # Auto-reload on code changes
+        port=port,
+        reload=True
     )
