@@ -69,7 +69,7 @@ export default function DebugPanel({ wsUrl }: DebugPanelProps) {
         setDispatcherConnected(false);
       };
       
-      ws.onerror = (e) => {
+      ws.onerror = () => {
         addLog(`❌ Dispatcher WebSocket ERROR`);
         setDispatcherConnected(false);
       };

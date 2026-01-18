@@ -6,10 +6,11 @@ import AlertModal from './components/AlertModal';
 import MobileCameraView from './components/MobileCameraView';
 import DebugPanel from './components/DebugPanel';
 import type { Alert, Camera } from './types';
-import { isMobileDevice } from './hooks/useOvershoot';
 
-// WebSocket URL - CHANGE THIS FOR PRODUCTION
+// WebSocket URL - SET THIS IN VERCEL ENVIRONMENT VARIABLES
+// For Railway: wss://your-app.railway.app (note: wss not ws)
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
+const IS_LOCALHOST = WS_URL.includes('localhost');
 
 // Default cameras
 const DEFAULT_CAMERAS: Camera[] = [
@@ -29,9 +30,8 @@ function App() {
   // Check URL params for mobile camera mode
   const urlParams = new URLSearchParams(window.location.search);
   const cameraMode = urlParams.get('camera') || urlParams.get('c');
-  const isMobile = isMobileDevice();
 
-  // If on mobile with camera param, show camera-only view
+  // If camera param is set, show camera-only view (for phones)
   if (cameraMode) {
     return <MobileCameraView cameraId={cameraMode} />;
   }
@@ -96,9 +96,17 @@ function App() {
             <h1 className="text-xl font-semibold tracking-tight">
               DISPATCH<span className="text-[#737373]">AI</span>
             </h1>
-            <p className="text-xs text-[#737373] mt-1">
-              WS: {WS_URL} | {connected ? '🟢 Connected' : '🔴 Disconnected'}
+            <p className="text-xs mt-1">
+              <span className={connected ? 'text-green-400' : 'text-red-400'}>
+                {connected ? '🟢 Connected' : '🔴 Disconnected'}
+              </span>
+              <span className="text-[#737373] ml-2">→ {WS_URL}</span>
             </p>
+            {IS_LOCALHOST && window.location.hostname !== 'localhost' && (
+              <p className="text-xs text-yellow-400 mt-1">
+                ⚠️ Set VITE_WS_URL in Vercel to your Railway URL (wss://...)
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <button
