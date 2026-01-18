@@ -2,323 +2,272 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
 
-// Test incidents that will trigger alerts
 const TEST_INCIDENTS = [
-  {
-    type: 'MEDICAL',
-    descriptions: [
-      'MEDICAL EMERGENCY: Person collapsed on sidewalk, appears unconscious. Not moving.',
-      'Person still on ground, not responsive. One bystander kneeling beside them.',
-      'Situation unchanged. Person remains unresponsive. Small crowd gathering.',
-      'Multiple bystanders now present. One person appears to be on phone.',
-      'Emergency situation ongoing. Person has not moved. Awaiting response.',
-    ]
-  },
-  {
-    type: 'FIRE',
-    descriptions: [
-      'FIRE ALERT: Heavy dark smoke visible from second floor window of building.',
-      'Smoke continuing from building. People visible exiting through front door.',
-      'Evacuation in progress. More smoke visible. Several people gathered outside.',
-      'Smoke intensifying. No visible flames yet. Building appears to be commercial.',
-      'Situation ongoing. Smoke still emanating from window. Crowd at safe distance.',
-    ]
-  },
-  {
-    type: 'ACCIDENT',
-    descriptions: [
-      'VEHICLE COLLISION: Two cars involved in accident at intersection.',
-      'Sedan with front-end damage, SUV with side damage. Airbags deployed in sedan.',
-      'Steam or smoke from sedan engine compartment. One person exiting vehicle.',
-      'Driver appears to be holding arm. Second vehicle occupants checking on first driver.',
-      'Both vehicles stationary. Debris on roadway. Traffic backing up.',
-    ]
-  }
+  { type: 'MEDICAL', text: 'MEDICAL EMERGENCY: Person collapsed, appears unconscious, not moving.' },
+  { type: 'FIRE', text: 'FIRE ALERT: Heavy smoke visible from building, people evacuating.' },
+  { type: 'ACCIDENT', text: 'VEHICLE COLLISION: Two-car accident, airbags deployed, possible injuries.' },
 ];
 
-const NORMAL_DESCRIPTIONS = [
-  'Street scene with pedestrians walking on sidewalk. Light vehicle traffic.',
-  'Parking lot view. Several parked cars. One person walking toward building.',
-  'Intersection with traffic light. Cars waiting at red light. Normal activity.',
-  'Office building entrance. People entering and exiting. No incidents.',
-  'Residential street. Parked cars. Person walking dog on sidewalk.',
-];
-
-interface MobileCameraViewProps {
+interface Props {
   cameraId: string;
 }
 
-export default function MobileCameraView({ cameraId }: MobileCameraViewProps) {
+export default function MobileCameraView({ cameraId }: Props) {
   const [connected, setConnected] = useState(false);
-  const [status, setStatus] = useState('Connecting...');
-  const [messagesSent, setMessagesSent] = useState(0);
-  const [lastMessage, setLastMessage] = useState('');
-  const [isSending, setIsSending] = useState(false);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
-  
+  const [streaming, setStreaming] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [msgCount, setMsgCount] = useState(0);
+  const [lastSnapshot, setLastSnapshot] = useState<string | null>(null);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const streamIntervalRef = useRef<number | null>(null);
-  const reconnectTimeoutRef = useRef<number | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const frameIntervalRef = useRef<number | null>(null);
 
-  const addLog = useCallback((msg: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    setLogs(prev => [`[${timestamp}] ${msg}`, ...prev.slice(0, 30)]);
-  }, []);
-
-  // Connect to WebSocket
+  // Connect WebSocket
   useEffect(() => {
     const connect = () => {
-      const wsUrl = `${WS_URL}/ws/camera/${cameraId}`;
-      addLog(`Connecting to ${wsUrl}`);
-      setStatus('Connecting...');
-
-      const ws = new WebSocket(wsUrl);
-
+      const ws = new WebSocket(`${WS_URL}/ws/camera/${cameraId}`);
+      
       ws.onopen = () => {
-        addLog('Connected successfully');
-        setStatus('Connected');
+        console.log('Connected');
         setConnected(true);
+        setError(null);
       };
-
-      ws.onclose = (event) => {
-        addLog(`Disconnected (code: ${event.code})`);
-        setStatus('Disconnected');
+      
+      ws.onclose = () => {
+        console.log('Disconnected');
         setConnected(false);
-        setIsStreaming(false);
-        
-        // Stop streaming if active
-        if (streamIntervalRef.current) {
-          clearInterval(streamIntervalRef.current);
-          streamIntervalRef.current = null;
-        }
-        
-        // Reconnect after delay
-        reconnectTimeoutRef.current = window.setTimeout(() => {
-          addLog('Attempting to reconnect...');
-          connect();
-        }, 3000);
+        setTimeout(connect, 3000);
       };
-
+      
       ws.onerror = () => {
-        addLog('Connection error');
-        setStatus('Error');
+        setError('Connection failed');
         setConnected(false);
       };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          addLog(`Received: ${data.type}`);
-        } catch (e) {
-          addLog(`Received: ${event.data.substring(0, 50)}`);
-        }
-      };
-
+      
       wsRef.current = ws;
     };
 
     connect();
+    return () => wsRef.current?.close();
+  }, [cameraId]);
 
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      if (streamIntervalRef.current) {
-        clearInterval(streamIntervalRef.current);
-      }
-      wsRef.current?.close();
-    };
-  }, [cameraId, addLog]);
-
-  // Send message helper
-  const sendMessage = useCallback((text: string, type: string = 'overshoot_result') => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      addLog('Cannot send: not connected');
-      return false;
-    }
-
-    wsRef.current.send(JSON.stringify({
-      type,
-      description: text,
-      timestamp: new Date().toISOString()
-    }));
-    
-    setMessagesSent(prev => prev + 1);
-    setLastMessage(text.substring(0, 80) + (text.length > 80 ? '...' : ''));
-    return true;
-  }, [addLog]);
-
-  // Force process buffer
-  const forceProcess = useCallback(() => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(JSON.stringify({ type: 'force_process' }));
-    addLog('Buffer process triggered');
-  }, [addLog]);
-
-  // Send test incident
-  const sendTestIncident = useCallback(() => {
-    if (!connected || isSending) return;
-
-    setIsSending(true);
-    const incident = TEST_INCIDENTS[Math.floor(Math.random() * TEST_INCIDENTS.length)];
-    addLog(`Sending ${incident.type} test incident...`);
-
-    incident.descriptions.forEach((desc, index) => {
-      setTimeout(() => {
-        sendMessage(desc);
-        addLog(`Sent ${index + 1}/${incident.descriptions.length}`);
-        
-        if (index === incident.descriptions.length - 1) {
-          setTimeout(() => {
-            forceProcess();
-            setIsSending(false);
-            addLog('Test incident complete');
-          }, 500);
-        }
-      }, index * 500);
-    });
-  }, [connected, isSending, sendMessage, forceProcess, addLog]);
-
-  // Toggle streaming
-  const toggleStreaming = useCallback(() => {
-    if (isStreaming) {
-      if (streamIntervalRef.current) {
-        clearInterval(streamIntervalRef.current);
-        streamIntervalRef.current = null;
-      }
-      setIsStreaming(false);
-      addLog('Streaming stopped');
-    } else {
-      setIsStreaming(true);
-      addLog('Streaming started');
+  // Start camera
+  const startCamera = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false
+      });
       
-      let index = 0;
-      streamIntervalRef.current = window.setInterval(() => {
-        const desc = NORMAL_DESCRIPTIONS[index % NORMAL_DESCRIPTIONS.length];
-        if (sendMessage(desc)) {
-          index++;
-        }
-      }, 2000);
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setCameraReady(true);
+      setError(null);
+    } catch (e) {
+      setError('Camera access denied');
+      console.error(e);
     }
-  }, [isStreaming, sendMessage, addLog]);
+  }, []);
+
+  // Capture frame from video
+  const captureFrame = useCallback((): string | null => {
+    if (!videoRef.current || !canvasRef.current) return null;
+    
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = 320;
+    canvas.height = 240;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.6);
+  }, []);
+
+  // Start streaming frames
+  const startStreaming = useCallback(() => {
+    if (!connected || !cameraReady) return;
+    
+    setStreaming(true);
+    frameIntervalRef.current = window.setInterval(() => {
+      const frame = captureFrame();
+      if (frame && wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: 'video_frame',
+          frame,
+          timestamp: new Date().toISOString()
+        }));
+        setMsgCount(c => c + 1);
+        setLastSnapshot(frame);
+      }
+    }, 500); // 2 FPS
+  }, [connected, cameraReady, captureFrame]);
+
+  // Stop streaming
+  const stopStreaming = useCallback(() => {
+    if (frameIntervalRef.current) {
+      clearInterval(frameIntervalRef.current);
+      frameIntervalRef.current = null;
+    }
+    setStreaming(false);
+  }, []);
+
+  // Send alert with current frame
+  const sendAlert = useCallback((type: string) => {
+    if (!connected) return;
+    
+    const frame = captureFrame();
+    const incident = TEST_INCIDENTS.find(i => i.type === type) || TEST_INCIDENTS[0];
+    
+    // Send multiple descriptions to trigger processing
+    for (let i = 0; i < 5; i++) {
+      setTimeout(() => {
+        wsRef.current?.send(JSON.stringify({
+          type: 'overshoot_result',
+          description: `${incident.text} [Frame ${i + 1}/5]`,
+          timestamp: new Date().toISOString(),
+          snapshot: frame
+        }));
+      }, i * 300);
+    }
+
+    // Force process
+    setTimeout(() => {
+      wsRef.current?.send(JSON.stringify({ type: 'force_process' }));
+    }, 2000);
+
+    setLastSnapshot(frame);
+  }, [connected, captureFrame]);
+
+  // Cleanup
+  useEffect(() => {
+    return () => {
+      stopStreaming();
+      streamRef.current?.getTracks().forEach(t => t.stop());
+    };
+  }, [stopStreaming]);
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-white flex flex-col">
+    <div className="min-h-screen bg-zinc-950 text-white flex flex-col">
       {/* Header */}
-      <header className="px-4 py-4 border-b border-[#27272a] bg-[#18181b]">
+      <header className="p-4 bg-zinc-900 border-b border-zinc-800">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold">DispatchAI Camera</h1>
-            <p className="text-sm text-[#71717a] mt-1">ID: {cameraId}</p>
+            <h1 className="text-xl font-bold">DispatchAI</h1>
+            <p className="text-sm text-zinc-400">Camera: {cameraId}</p>
           </div>
           <div className="flex items-center gap-2">
-            <span className={`w-3 h-3 rounded-full ${connected ? 'bg-emerald-500' : 'bg-red-500'}`} />
-            <span className={`text-sm font-medium ${connected ? 'text-emerald-500' : 'text-red-500'}`}>
-              {status}
-            </span>
+            <span className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
+            <span className="text-sm">{connected ? 'Online' : 'Offline'}</span>
           </div>
         </div>
       </header>
 
-      {/* Stats */}
-      <div className="px-4 py-3 bg-[#0f0f0f] border-b border-[#27272a] grid grid-cols-3 gap-4 text-center">
-        <div>
-          <p className="text-2xl font-bold">{messagesSent}</p>
-          <p className="text-xs text-[#71717a]">Messages Sent</p>
-        </div>
-        <div>
-          <p className="text-2xl font-bold">{isStreaming ? 'ON' : 'OFF'}</p>
-          <p className="text-xs text-[#71717a]">Auto Stream</p>
-        </div>
-        <div>
-          <p className="text-2xl font-bold">{connected ? 'YES' : 'NO'}</p>
-          <p className="text-xs text-[#71717a]">Connected</p>
-        </div>
-      </div>
-
-      {/* Main Actions */}
-      <div className="p-4 space-y-3">
-        {/* Test Alert Button */}
-        <button
-          onClick={sendTestIncident}
-          disabled={!connected || isSending}
-          className={`w-full py-5 rounded-xl text-lg font-bold transition-all ${
-            isSending 
-              ? 'bg-amber-600 text-white' 
-              : connected 
-                ? 'bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white' 
-                : 'bg-[#27272a] text-[#52525b] cursor-not-allowed'
-          }`}
-        >
-          {isSending ? 'Sending Test Incident...' : 'Send Test Alert'}
-        </button>
-
-        {/* Stream Toggle */}
-        <button
-          onClick={toggleStreaming}
-          disabled={!connected}
-          className={`w-full py-4 rounded-xl font-semibold transition-all ${
-            isStreaming 
-              ? 'bg-emerald-600 hover:bg-emerald-500 text-white' 
-              : connected
-                ? 'bg-[#27272a] hover:bg-[#3f3f46] text-white'
-                : 'bg-[#27272a] text-[#52525b] cursor-not-allowed'
-          }`}
-        >
-          {isStreaming ? 'Stop Auto-Stream' : 'Start Auto-Stream'}
-        </button>
-      </div>
-
-      {/* Last Message */}
-      {lastMessage && (
-        <div className="mx-4 p-3 bg-[#18181b] rounded-lg border border-[#27272a]">
-          <p className="text-xs text-[#71717a] mb-1">Last message sent:</p>
-          <p className="text-sm">{lastMessage}</p>
-        </div>
-      )}
-
-      {/* Activity Log */}
-      <div className="flex-1 p-4 overflow-hidden flex flex-col">
-        <h3 className="text-sm font-semibold text-[#71717a] mb-2">Activity Log</h3>
-        <div className="flex-1 overflow-y-auto bg-[#0f0f0f] rounded-lg border border-[#27272a] p-3">
-          <div className="space-y-1 font-mono text-xs">
-            {logs.length === 0 ? (
-              <p className="text-[#52525b]">Waiting for activity...</p>
-            ) : (
-              logs.map((log, i) => (
-                <p key={i} className={`${
-                  log.includes('Connected') ? 'text-emerald-400' :
-                  log.includes('error') || log.includes('Error') ? 'text-red-400' :
-                  log.includes('Sending') || log.includes('triggered') ? 'text-amber-400' :
-                  'text-[#71717a]'
-                }`}>
-                  {log}
-                </p>
-              ))
-            )}
+      {/* Video Preview */}
+      <div className="relative bg-black aspect-video">
+        <video
+          ref={videoRef}
+          className="w-full h-full object-cover"
+          playsInline
+          muted
+        />
+        <canvas ref={canvasRef} className="hidden" />
+        
+        {!cameraReady && (
+          <div className="absolute inset-0 flex items-center justify-center bg-zinc-900">
+            <button
+              onClick={startCamera}
+              className="px-6 py-4 bg-blue-600 hover:bg-blue-500 rounded-xl text-lg font-semibold"
+            >
+              Enable Camera
+            </button>
           </div>
-        </div>
+        )}
+
+        {streaming && (
+          <div className="absolute top-4 right-4 flex items-center gap-2 bg-black/70 px-3 py-1.5 rounded-full">
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-sm font-medium">LIVE</span>
+          </div>
+        )}
+
+        {cameraReady && (
+          <div className="absolute bottom-4 left-4 text-xs bg-black/70 px-2 py-1 rounded">
+            {msgCount} frames sent
+          </div>
+        )}
       </div>
 
-      {/* Connection Info */}
-      <div className="p-4 border-t border-[#27272a] bg-[#18181b]">
-        <p className="text-xs text-[#52525b]">
-          Server: {WS_URL}
-        </p>
+      {/* Controls */}
+      <div className="flex-1 p-4 space-y-4">
+        {/* Stream Toggle */}
+        {cameraReady && (
+          <button
+            onClick={streaming ? stopStreaming : startStreaming}
+            disabled={!connected}
+            className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
+              streaming 
+                ? 'bg-amber-600 hover:bg-amber-500' 
+                : 'bg-green-600 hover:bg-green-500'
+            } disabled:opacity-50`}
+          >
+            {streaming ? 'Stop Streaming' : 'Start Live Stream'}
+          </button>
+        )}
+
+        {/* Alert Buttons */}
+        <div className="grid grid-cols-3 gap-3">
+          <button
+            onClick={() => sendAlert('MEDICAL')}
+            disabled={!connected || !cameraReady}
+            className="py-4 bg-red-600 hover:bg-red-500 rounded-xl font-semibold disabled:opacity-50"
+          >
+            Medical
+          </button>
+          <button
+            onClick={() => sendAlert('FIRE')}
+            disabled={!connected || !cameraReady}
+            className="py-4 bg-orange-600 hover:bg-orange-500 rounded-xl font-semibold disabled:opacity-50"
+          >
+            Fire
+          </button>
+          <button
+            onClick={() => sendAlert('ACCIDENT')}
+            disabled={!connected || !cameraReady}
+            className="py-4 bg-blue-600 hover:bg-blue-500 rounded-xl font-semibold disabled:opacity-50"
+          >
+            Accident
+          </button>
+        </div>
+
+        {/* Last Snapshot */}
+        {lastSnapshot && (
+          <div className="p-3 bg-zinc-900 rounded-xl">
+            <p className="text-xs text-zinc-400 mb-2">Last Captured Frame</p>
+            <img src={lastSnapshot} alt="Last frame" className="w-full rounded-lg" />
+          </div>
+        )}
+
+        {/* Error */}
+        {error && (
+          <div className="p-4 bg-red-900/30 border border-red-800 rounded-xl">
+            <p className="text-red-400">{error}</p>
+          </div>
+        )}
       </div>
 
-      {/* Connection Error Help */}
-      {!connected && status === 'Error' && (
-        <div className="mx-4 mb-4 p-4 bg-red-950/30 rounded-lg border border-red-900/50">
-          <p className="text-sm text-red-400 font-medium mb-2">Connection Failed</p>
-          <ul className="text-xs text-red-400/80 space-y-1">
-            <li>- Check if backend is running</li>
-            <li>- Verify VITE_WS_URL is correct</li>
-            <li>- Use wss:// for production (not ws://)</li>
-          </ul>
-        </div>
-      )}
+      {/* Footer */}
+      <footer className="p-4 bg-zinc-900 border-t border-zinc-800 text-xs text-zinc-500">
+        Server: {WS_URL}
+      </footer>
     </div>
   );
 }
