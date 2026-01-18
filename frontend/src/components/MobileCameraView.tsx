@@ -5,14 +5,14 @@ interface MobileCameraViewProps {
 }
 
 export default function MobileCameraView({ cameraId }: MobileCameraViewProps) {
-  const [lastDescription, setLastDescription] = useState('Initializing camera...');
-  const [descriptionCount, setDescriptionCount] = useState(0);
+  const [lastDescription] = useState('Initializing camera...');
+  const [descriptionCount] = useState(0);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  const { connected, sendDescription } = useCameraSocket(cameraId);
+  const { connected } = useCameraSocket(cameraId);
 
  
 
