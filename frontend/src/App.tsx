@@ -4,18 +4,15 @@ import CameraFeed from './components/CameraFeed';
 import AlertPanel from './components/AlertPanel';
 import AlertModal from './components/AlertModal';
 import MobileCameraView from './components/MobileCameraView';
-import DebugPanel from './components/DebugPanel';
 import type { Alert, Camera } from './types';
 
-// WebSocket URL - SET THIS IN VERCEL ENVIRONMENT VARIABLES
-// For Railway: wss://your-app.railway.app (note: wss not ws)
+// IMPORTANT: Set VITE_WS_URL in Vercel Environment Variables
+// Example: wss://your-railway-app.railway.app
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
-const IS_LOCALHOST = WS_URL.includes('localhost');
 
-// Default cameras
 const DEFAULT_CAMERAS: Camera[] = [
-  { id: 'CAM_A1', name: 'Camera 1 - Main', status: 'active' },
-  { id: 'CAM_B2', name: 'Camera 2 - Side', status: 'active' },
+  { id: 'CAM_001', name: 'Main Entrance', status: 'active' },
+  { id: 'CAM_002', name: 'Parking Lot', status: 'active' },
 ];
 
 function App() {
@@ -25,20 +22,16 @@ function App() {
   const [cameras, setCameras] = useState<Camera[]>(DEFAULT_CAMERAS);
   const [showAddCamera, setShowAddCamera] = useState(false);
   const [newCameraName, setNewCameraName] = useState('');
-  const [showDebug, setShowDebug] = useState(true); // Show debug by default for testing
 
-  // Check URL params for mobile camera mode
   const urlParams = new URLSearchParams(window.location.search);
   const cameraMode = urlParams.get('camera') || urlParams.get('c');
 
-  // If camera param is set, show camera-only view (for phones)
   if (cameraMode) {
     return <MobileCameraView cameraId={cameraMode} />;
   }
 
-  // Handle new alerts from WebSocket
   const handleNewAlert = useCallback((alert: Alert) => {
-    console.log('🚨 NEW ALERT RECEIVED:', alert);
+    console.log('New alert received:', alert);
     setAlerts(prev => [alert, ...prev]);
     playAlertSound(alert.classification.severity);
   }, []);
@@ -87,81 +80,75 @@ function App() {
   const pendingAlerts = alerts.filter(a => a.status === 'PENDING_REVIEW');
 
   return (
-    <div className="h-screen flex bg-[#0a0a0a] text-[#e5e5e5]">
-      {/* Main camera area */}
-      <div className="flex-1 p-4 flex flex-col">
+    <div className="h-screen flex bg-[#09090b] text-[#fafafa]">
+      {/* Main Area */}
+      <div className="flex-1 flex flex-col">
         {/* Header */}
-        <header className="mb-4 flex items-center justify-between">
-          <div>
+        <header className="h-16 px-6 border-b border-[#27272a] flex items-center justify-between bg-[#09090b]">
+          <div className="flex items-center gap-6">
             <h1 className="text-xl font-semibold tracking-tight">
-              DISPATCH<span className="text-[#737373]">AI</span>
+              DISPATCH<span className="text-[#52525b]">AI</span>
             </h1>
-            <p className="text-xs mt-1">
-              <span className={connected ? 'text-green-400' : 'text-red-400'}>
-                {connected ? '🟢 Connected' : '🔴 Disconnected'}
+            <div className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-red-500'}`} />
+              <span className={`text-sm ${connected ? 'text-emerald-500' : 'text-red-500'}`}>
+                {connected ? 'Online' : 'Offline'}
               </span>
-              <span className="text-[#737373] ml-2">→ {WS_URL}</span>
-            </p>
-            {IS_LOCALHOST && window.location.hostname !== 'localhost' && (
-              <p className="text-xs text-yellow-400 mt-1">
-                ⚠️ Set VITE_WS_URL in Vercel to your Railway URL (wss://...)
-              </p>
-            )}
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowDebug(prev => !prev)}
-              className={`px-3 py-1.5 rounded text-xs font-medium ${
-                showDebug ? 'bg-purple-600' : 'bg-gray-700'
-              }`}
-            >
-              🔧 Debug
-            </button>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-[#71717a]">{cameras.length} cameras</span>
             <button
               onClick={() => setShowAddCamera(true)}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-xs font-medium"
+              className="px-4 py-2 bg-[#18181b] hover:bg-[#27272a] border border-[#27272a] rounded-md text-sm font-medium transition-colors"
             >
-              + Add Camera
+              Add Camera
             </button>
-            <span className="text-sm text-[#737373]">{cameras.length} cameras</span>
           </div>
         </header>
 
-        {/* Camera Grid */}
-        {fullscreenCamera ? (
-          <div className="flex-1 cursor-pointer" onClick={() => setFullscreenCamera(null)}>
-            <CameraFeed
-              cameraId={fullscreenCamera}
-              cameraName={cameras.find(c => c.id === fullscreenCamera)?.name || fullscreenCamera}
-              isFullscreen
-              onRemove={() => removeCamera(fullscreenCamera)}
-            />
-          </div>
-        ) : (
-          <div className="flex-1 grid grid-cols-2 gap-3 auto-rows-fr">
-            {cameras.map((camera) => (
-              <div
-                key={camera.id}
-                className="cursor-pointer min-h-[200px]"
-                onClick={() => setFullscreenCamera(camera.id)}
-              >
-                <CameraFeed
-                  cameraId={camera.id}
-                  cameraName={camera.name}
-                  onRemove={() => removeCamera(camera.id)}
-                />
-              </div>
-            ))}
+        {/* Connection Warning */}
+        {!connected && (
+          <div className="px-6 py-3 bg-red-950/50 border-b border-red-900/50">
+            <p className="text-sm text-red-400">
+              Backend not connected. Set <code className="bg-red-950 px-1 rounded">VITE_WS_URL</code> in Vercel to your Railway URL (wss://your-app.railway.app)
+            </p>
           </div>
         )}
+
+        {/* Camera Grid */}
+        <div className="flex-1 p-4 overflow-auto">
+          {fullscreenCamera ? (
+            <div className="h-full" onClick={() => setFullscreenCamera(null)}>
+              <CameraFeed
+                cameraId={fullscreenCamera}
+                cameraName={cameras.find(c => c.id === fullscreenCamera)?.name || ''}
+                isFullscreen
+                onRemove={() => removeCamera(fullscreenCamera)}
+              />
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 h-full auto-rows-fr">
+              {cameras.map((camera) => (
+                <div key={camera.id} onClick={() => setFullscreenCamera(camera.id)}>
+                  <CameraFeed
+                    cameraId={camera.id}
+                    cameraName={camera.name}
+                    onRemove={() => removeCamera(camera.id)}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Alert Panel - Right Side */}
-      <div className="w-96 border-l border-[#2a2a2a] bg-[#141414]">
+      {/* Alerts Sidebar */}
+      <aside className="w-[380px] border-l border-[#27272a] bg-[#0c0c0e] flex flex-col">
         <AlertPanel alerts={pendingAlerts} onSelectAlert={setSelectedAlert} />
-      </div>
+      </aside>
 
-      {/* Alert Modal */}
+      {/* Modals */}
       {selectedAlert && (
         <AlertModal
           alert={selectedAlert}
@@ -171,48 +158,43 @@ function App() {
         />
       )}
 
-      {/* Add Camera Modal */}
       {showAddCamera && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-          <div className="bg-[#141414] border border-[#2a2a2a] rounded-lg w-full max-w-md p-6">
-            <h2 className="text-lg font-medium mb-4">Add Camera</h2>
-            
-            <div className="space-y-4">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+          <div className="bg-[#18181b] border border-[#27272a] rounded-lg w-full max-w-md shadow-2xl">
+            <div className="p-5 border-b border-[#27272a]">
+              <h2 className="text-lg font-semibold">Add Camera</h2>
+            </div>
+            <div className="p-5 space-y-4">
               <div>
-                <label className="block text-xs text-[#737373] uppercase mb-2">Camera Name</label>
+                <label className="block text-sm text-[#a1a1aa] mb-2">Camera Name</label>
                 <input
                   type="text"
                   value={newCameraName}
                   onChange={(e) => setNewCameraName(e.target.value)}
-                  placeholder="e.g., Front Door"
-                  className="w-full px-3 py-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-sm focus:outline-none focus:border-blue-500"
+                  placeholder="e.g., Front Entrance"
+                  className="w-full px-3 py-2 bg-[#09090b] border border-[#27272a] rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   autoFocus
                   onKeyDown={(e) => e.key === 'Enter' && addCamera()}
                 />
               </div>
-
-              <div className="p-4 bg-[#0a0a0a] rounded border border-[#2a2a2a]">
-                <p className="text-sm font-medium mb-2">📱 Connect Phone Camera:</p>
-                <p className="text-xs text-[#737373] mb-2">
-                  Open this URL on your phone:
-                </p>
-                <code className="block p-2 bg-[#1a1a1a] rounded text-xs text-blue-400 break-all">
+              <div className="p-4 bg-[#09090b] rounded-md border border-[#27272a]">
+                <p className="text-sm font-medium mb-2">Phone Camera URL</p>
+                <code className="block p-2 bg-[#18181b] rounded text-xs text-blue-400 break-all">
                   {window.location.origin}?camera=PHONE1
                 </code>
               </div>
             </div>
-
-            <div className="flex gap-3 justify-end mt-6">
+            <div className="p-5 border-t border-[#27272a] flex gap-3 justify-end">
               <button
                 onClick={() => setShowAddCamera(false)}
-                className="px-4 py-2 border border-[#2a2a2a] rounded text-sm hover:bg-[#2a2a2a]"
+                className="px-4 py-2 text-sm hover:bg-[#27272a] rounded-md transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={addCamera}
                 disabled={!newCameraName.trim()}
-                className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-md text-sm font-medium disabled:opacity-50 transition-colors"
               >
                 Add
               </button>
@@ -220,9 +202,6 @@ function App() {
           </div>
         </div>
       )}
-
-      {/* Debug Panel */}
-      {showDebug && <DebugPanel wsUrl={WS_URL} />}
     </div>
   );
 }

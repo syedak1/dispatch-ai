@@ -17,19 +17,19 @@ export function useCameraSocket(cameraId: string) {
     const ws = new WebSocket(`${WS_BASE_URL}/ws/camera/${cameraId}`);
 
     ws.onopen = () => {
-      console.log(`📷 [${cameraId}] WebSocket connected`);
+      console.log(`[${cameraId}] Camera connected`);
       setConnected(true);
     };
 
     ws.onclose = () => {
-      console.log(`📷 [${cameraId}] WebSocket disconnected`);
+      console.log(`[${cameraId}] Camera disconnected`);
       setConnected(false);
       // Reconnect after 3 seconds
       reconnectTimeoutRef.current = window.setTimeout(connect, 3000);
     };
 
     ws.onerror = (error) => {
-      console.error(`📷 [${cameraId}] WebSocket error:`, error);
+      console.error(`[${cameraId}] Camera WebSocket error:`, error);
     };
 
     ws.onmessage = (event) => {
@@ -37,7 +37,7 @@ export function useCameraSocket(cameraId: string) {
         const data = JSON.parse(event.data);
         // Handle requests from backend (e.g., clip requests)
         if (data.type === 'request_clip') {
-          console.log(`🎬 [${cameraId}] Clip requested for incident: ${data.incident_id}`);
+          console.log(`[${cameraId}] Clip requested for incident: ${data.incident_id}`);
           // Future: implement clip recording
         }
       } catch (e) {
@@ -69,7 +69,15 @@ export function useCameraSocket(cameraId: string) {
     }
   }, []);
 
-  return { connected, sendDescription };
+  const forceProcess = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'force_process'
+      }));
+    }
+  }, []);
+
+  return { connected, sendDescription, forceProcess };
 }
 
 /**
@@ -92,18 +100,18 @@ export function useDispatcherSocket(onAlert: (alert: Alert) => void) {
     const ws = new WebSocket(`${WS_BASE_URL}/ws/dispatcher`);
 
     ws.onopen = () => {
-      console.log('👤 Dispatcher WebSocket connected');
+      console.log('Dispatcher connected');
       setConnected(true);
     };
 
     ws.onclose = () => {
-      console.log('👤 Dispatcher WebSocket disconnected');
+      console.log('Dispatcher disconnected');
       setConnected(false);
       reconnectTimeoutRef.current = window.setTimeout(connect, 3000);
     };
 
     ws.onerror = (error) => {
-      console.error('👤 Dispatcher WebSocket error:', error);
+      console.error('Dispatcher WebSocket error:', error);
     };
 
     ws.onmessage = (event) => {
