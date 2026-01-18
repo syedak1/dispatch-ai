@@ -4,6 +4,7 @@ import CameraFeed from './components/CameraFeed';
 import AlertPanel from './components/AlertPanel';
 import AlertModal from './components/AlertModal';
 import MobileCameraView from './components/MobileCameraView';
+import ConnectionTest from './components/ConnectionTest';
 import type { Alert, Camera } from './types';
 
 const DEFAULT_CAMERAS: Camera[] = [
@@ -149,7 +150,7 @@ function App() {
 
       {/* Alerts Sidebar */}
       <aside className="w-[380px] border-l border-zinc-800">
-        <AlertPanel alerts={pending} {...({ onSelect: setSelectedAlert } as any)} />
+        <AlertPanel alerts={pending} onSelectAlert={setSelectedAlert} />
       </aside>
 
       {/* Alert Modal */}
@@ -208,6 +209,9 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Connection Test Debug Panel */}
+      <ConnectionTest />
     </div>
   );
 }
