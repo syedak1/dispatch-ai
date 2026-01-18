@@ -1,7 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useCameraSocket } from '../hooks/useWebSocket';
-import { useOvershoot } from '../hooks/useOvershoot';
-
 interface MobileCameraViewProps {
   cameraId: string;
 }
@@ -83,14 +81,14 @@ export default function MobileCameraView({ cameraId }: MobileCameraViewProps) {
   const getStatusColor = () => {
     if (!connected) return 'bg-red-500';
     if (!isStreaming) return 'bg-yellow-500';
-    if (isActive) return 'bg-green-500';
+    if (isStreaming) return 'bg-green-500';
     return 'bg-yellow-500';
   };
 
   const getStatusText = () => {
     if (!connected) return 'Disconnected from server';
     if (!isStreaming) return 'Camera not started';
-    if (isActive) return 'Streaming to DispatchAI';
+    if (isStreaming) return 'Streaming to DispatchAI';
     return 'Connecting...';
   };
 
@@ -154,7 +152,7 @@ export default function MobileCameraView({ cameraId }: MobileCameraViewProps) {
         )}
 
         {/* Recording indicator */}
-        {isStreaming && isActive && (
+        {isStreaming && isStreaming && (
           <div className="absolute top-4 left-4 flex items-center gap-2 bg-black/50 px-3 py-1.5 rounded-full">
             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
             <span className="text-xs font-mono">LIVE</span>
@@ -212,8 +210,8 @@ export default function MobileCameraView({ cameraId }: MobileCameraViewProps) {
             </div>
             <div>
               <p className="text-[#737373]">Overshoot</p>
-              <p className={isActive ? 'text-green-400' : 'text-yellow-400'}>
-                {isActive ? 'Active' : 'Standby'}
+              <p className={isStreaming ? 'text-green-400' : 'text-yellow-400'}>
+                {isStreaming ? 'Streaming' : 'Standby'}
               </p>
             </div>
             <div>
