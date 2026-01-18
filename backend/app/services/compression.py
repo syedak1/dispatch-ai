@@ -2,7 +2,7 @@ import os
 import httpx
 from dotenv import load_dotenv
 
-load_dotenv(dotenv_path="../../.env")
+load_dotenv(dotenv_path="../../../.env")
 
 TOKEN_COMPANY_API_KEY = os.getenv("TOKEN_COMPANY_API_KEY")
 TOKEN_COMPANY_URL = "https://api.thetokencompany.com/v1/compress"

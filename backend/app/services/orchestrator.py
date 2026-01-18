@@ -3,7 +3,7 @@ import json
 from google import genai
 from dotenv import load_dotenv
 
-load_dotenv(dotenv_path="../../.env")
+load_dotenv(dotenv_path="../../../.env")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 

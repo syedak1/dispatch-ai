@@ -122,16 +122,15 @@ export function useCameraSocket(cameraId: string) {
       }
     };
   }, [cameraId]);
-
-  const sendDescription = useCallback((description: string) => {
-    if (ws.current?.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify({
-        type: 'overshoot_result',
-        description,
-        timestamp: new Date().toISOString()
-      }));
-    }
-  }, []);
+const sendDescription = useCallback((description: string, timestamp?: string) => {
+  if (ws.current?.readyState === WebSocket.OPEN) {
+    ws.current.send(JSON.stringify({
+      type: 'overshoot_result',
+      description,
+      timestamp: timestamp || new Date().toISOString(),
+    }));
+  }
+}, []);
 
   return { connected, sendDescription };
 }

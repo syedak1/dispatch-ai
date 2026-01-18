@@ -11,7 +11,13 @@ from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-load_dotenv(dotenv_path="../.env")
+# Load environment variables from .env file
+from pathlib import Path
+env_path = Path(__file__).parent.parent.parent / ".env"  # Three levels up: main.py -> app -> backend -> nexhacks
+load_dotenv(dotenv_path=env_path)
+print(f"📂 Loading .env from: {env_path}")
+print(f"📂 .env exists: {env_path.exists()}")
+print(f"🔑 GEMINI_API_KEY loaded: {os.getenv('GEMINI_API_KEY')[:20]}... (length: {len(os.getenv('GEMINI_API_KEY', ''))})")
 
 # Import our services
 from app.services.compression import compress_text
@@ -19,8 +25,7 @@ from app.services.orchestrator import classify_incident
 from app.agents.fire_agent import run_fire_agent
 from app.agents.ems_agent import run_ems_agent
 from app.agents.police_agent import run_police_agent
-from app.services.phoenix_tracer import init_phoenix, log_trace
-
+from app.services.pheonix_tracer import init_phoenix, log_trace
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

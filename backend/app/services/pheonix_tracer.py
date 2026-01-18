@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 
-load_dotenv(dotenv_path="../../.env")
+load_dotenv(dotenv_path="../../../.env")
 
 # Phoenix configuration
 PHOENIX_API_KEY = os.getenv("PHOENIX_API_KEY")

@@ -1,0 +1,272 @@
+Metadata-Version: 2.4
+Name: tokenc
+Version: 0.1.0
+Summary: Python SDK for The Token Company API - Compress LLM inputs to reduce costs
+Home-page: https://github.com/yourusername/tokenc
+Author: The Token Company
+Author-email: The Token Company <support@thetokencompany.com>
+License: MIT
+Project-URL: Homepage, https://thetokencompany.com
+Project-URL: Documentation, https://thetokencompany.com/docs
+Project-URL: Repository, https://github.com/yourusername/tokenc
+Project-URL: Bug Tracker, https://github.com/yourusername/tokenc/issues
+Keywords: llm,compression,tokens,ai,api,cost-optimization
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: requests>=2.25.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-cov>=3.0.0; extra == "dev"
+Requires-Dist: black>=22.0.0; extra == "dev"
+Requires-Dist: mypy>=0.950; extra == "dev"
+Requires-Dist: flake8>=4.0.0; extra == "dev"
+Dynamic: author
+Dynamic: home-page
+Dynamic: license-file
+Dynamic: requires-python
+
+# tokenc - Python SDK for The Token Company
+
+A Python client library for compressing LLM inputs to reduce token usage, lower costs, and speed up AI applications.
+
+## Installation
+
+```bash
+pip install tokenc
+```
+
+## Quick Start
+
+```python
+from tokenc import TokenClient
+
+# Initialize the client
+client = TokenClient(api_key="your-api-key")
+
+# Compress text
+response = client.compress_input(
+    input="Your long text here that needs compression...",
+    aggressiveness=0.5
+)
+
+print(f"Compressed text: {response.output}")
+print(f"Original tokens: {response.original_input_tokens}")
+print(f"Compressed tokens: {response.output_tokens}")
+print(f"Tokens saved: {response.tokens_saved}")
+print(f"Compression ratio: {response.compression_ratio:.2f}x")
+```
+
+## Features
+
+- 🚀 Simple and intuitive API
+- 🎯 Type-safe with dataclasses
+- 🔧 Flexible compression settings
+- 📊 Built-in compression metrics
+- ⚡ Context manager support
+- 🛡️ Comprehensive error handling
+
+## Usage Examples
+
+### Basic Compression
+
+```python
+from tokenc import TokenClient
+
+client = TokenClient(api_key="your-api-key")
+
+response = client.compress_input(
+    input="This is a long text that contains lots of unnecessary filler words and redundant information that can be compressed.",
+    aggressiveness=0.5
+)
+
+print(response.output)
+```
+
+### Advanced Compression with Settings
+
+```python
+from tokenc import TokenClient, CompressionSettings
+
+client = TokenClient(api_key="your-api-key")
+
+# Create custom compression settings
+settings = CompressionSettings(
+    aggressiveness=0.7,
+    max_output_tokens=100,
+    min_output_tokens=50
+)
+
+response = client.compress_input(
+    input="Your text here...",
+    compression_settings=settings
+)
+
+print(f"Compression percentage: {response.compression_percentage:.1f}%")
+```
+
+### Using as Context Manager
+
+```python
+from tokenc import TokenClient
+
+with TokenClient(api_key="your-api-key") as client:
+    response = client.compress_input(
+        input="Your text here...",
+        aggressiveness=0.6
+    )
+    print(response.output)
+# Session automatically closed
+```
+
+### Different Compression Levels
+
+```python
+from tokenc import TokenClient
+
+client = TokenClient(api_key="your-api-key")
+
+text = "Your long text here..."
+
+# Light compression - preserve most content
+light = client.compress_input(input=text, aggressiveness=0.2)
+
+# Moderate compression - balanced approach
+moderate = client.compress_input(input=text, aggressiveness=0.5)
+
+# Aggressive compression - maximum savings
+aggressive = client.compress_input(input=text, aggressiveness=0.8)
+```
+
+## Compression Aggressiveness Levels
+
+- **0.1-0.3**: Light compression - Removes obvious filler words
+- **0.4-0.6**: Moderate compression - Balanced approach (recommended)
+- **0.7-0.9**: Aggressive compression - Maximum cost savings
+
+## API Reference
+
+### TokenClient
+
+#### `__init__(api_key: str, base_url: str = ..., timeout: int = 30)`
+
+Initialize the Token Company API client.
+
+**Parameters:**
+- `api_key` (str): Your API key for authentication
+- `base_url` (str, optional): Base URL for the API
+- `timeout` (int, optional): Request timeout in seconds
+
+#### `compress_input(...) -> CompressResponse`
+
+Compress text input for optimized LLM inference.
+
+**Parameters:**
+- `input` (str): The text to compress
+- `model` (str, optional): Model to use (default: "bear-1")
+- `aggressiveness` (float, optional): Compression intensity 0.0-1.0 (default: 0.5)
+- `max_output_tokens` (int, optional): Maximum token count for output
+- `min_output_tokens` (int, optional): Minimum token count for output
+- `compression_settings` (CompressionSettings, optional): Custom settings object
+
+**Returns:**
+- `CompressResponse`: Object containing compressed output and metadata
+
+**Raises:**
+- `AuthenticationError`: Invalid API key
+- `InvalidRequestError`: Invalid request parameters
+- `RateLimitError`: Rate limit exceeded
+- `APIError`: Other API errors
+
+### CompressionSettings
+
+Dataclass for compression configuration.
+
+**Attributes:**
+- `aggressiveness` (float): Compression intensity 0.0-1.0
+- `max_output_tokens` (int | None): Optional maximum output tokens
+- `min_output_tokens` (int | None): Optional minimum output tokens
+
+### CompressResponse
+
+Dataclass for compression results.
+
+**Attributes:**
+- `output` (str): The compressed text
+- `output_tokens` (int): Token count of compressed output
+- `original_input_tokens` (int): Token count of original input
+- `compression_time` (float): Processing duration in seconds
+
+**Properties:**
+- `tokens_saved` (int): Number of tokens saved
+- `compression_ratio` (float): Ratio of original to compressed tokens
+- `compression_percentage` (float): Percentage reduction in tokens
+
+## Error Handling
+
+```python
+from tokenc import TokenClient, AuthenticationError, InvalidRequestError, RateLimitError, APIError
+
+client = TokenClient(api_key="your-api-key")
+
+try:
+    response = client.compress_input(input="Your text...")
+except AuthenticationError:
+    print("Invalid API key")
+except InvalidRequestError as e:
+    print(f"Invalid request: {e}")
+except RateLimitError:
+    print("Rate limit exceeded, please wait")
+except APIError as e:
+    print(f"API error: {e}")
+```
+
+## Development
+
+### Setup Development Environment
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/tokenc.git
+cd tokenc
+
+# Install in development mode
+pip install -e ".[dev]"
+```
+
+### Running Tests
+
+```bash
+pytest tests/
+```
+
+### Code Formatting
+
+```bash
+black tokenc/
+```
+
+## License
+
+MIT License - see LICENSE file for details
+
+## Support
+
+For issues and questions:
+- GitHub Issues: https://github.com/yourusername/tokenc/issues
+- Documentation: https://thetokencompany.com/docs
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useCameraSocket } from '../hooks/useWebSocket';
+import { useOvershoot } from '../hooks/useOvershoot';
 
 interface CameraFeedProps {
   cameraId: string;
@@ -7,79 +8,64 @@ interface CameraFeedProps {
   isFullscreen?: boolean;
 }
 
-// Simulated Overshoot-like prompts for demo
-const DEMO_DESCRIPTIONS = [
-  "Normal scene. Street visible with parked cars. No people in frame.",
-  "Two pedestrians walking on sidewalk. Clear weather. No incidents.",
-  "Light traffic. Three vehicles passing through intersection.",
-  "Empty parking lot. Street lights on. No activity.",
-];
-
+// Demo descriptions as fallback
 const INCIDENT_DESCRIPTIONS = [
-  "⚠️ Vehicle collision detected. Two cars involved. Smoke visible from engine. One person exiting vehicle, appears uninjured. Second person still in car.",
-  "⚠️ Person lying on ground near bus stop. Not moving. Three bystanders gathering. One person on phone, possibly calling for help.",
-  "⚠️ Smoke visible from third floor window of building. No flames visible yet. People gathering outside on street.",
+  "⚠️ COLLISION: Two-vehicle accident. Sedan and SUV. Visible damage. Smoke from sedan engine. One person exiting vehicle.",
+  "⚠️ MEDICAL: Person collapsed on sidewalk. Not moving. Three bystanders gathering. One person on phone.",
+  "⚠️ FIRE: Heavy smoke from second-floor window. Dark gray smoke. No visible flames yet. People evacuating.",
 ];
 
 export default function CameraFeed({ cameraId, cameraName, isFullscreen = false }: CameraFeedProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [hasCamera, setHasCamera] = useState(false);
   const [lastDescription, setLastDescription] = useState('Initializing...');
-  const [isSimulating, setIsSimulating] = useState(false);
+  const [useOvershootMode] = useState(true);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [sourceType, setSourceType] = useState<'camera' | 'video'>('camera');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { connected, sendDescription } = useCameraSocket(cameraId);
 
-  // Try to get real camera
-  useEffect(() => {
-    async function setupCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
-          audio: false
-        });
-        
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          setHasCamera(true);
-        }
-      } catch (err) {
-        console.log('No camera access, using demo mode');
-        setHasCamera(false);
-      }
+  // Handle Overshoot descriptions
+  const handleOvershootDescription = useCallback((description: string, timestamp: string) => {
+    console.log('📹 Overshoot:', description);
+    setLastDescription(description);
+    if (connected) {
+      sendDescription(description, timestamp);
     }
+  }, [connected, sendDescription]);
 
-    setupCamera();
-
-    return () => {
-      if (videoRef.current?.srcObject) {
-        const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-        tracks.forEach(track => track.stop());
-      }
-    };
+  const handleOvershootError = useCallback((error: Error) => {
+    console.error('Overshoot error:', error);
+    setLastDescription(`Error: ${error.message}`);
   }, []);
 
-  // Simulate Overshoot descriptions (for demo without real Overshoot)
-  useEffect(() => {
-    if (!connected) return;
+  // Handle video file selection
+  const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && file.type.startsWith('video/')) {
+      setVideoFile(file);
+      setSourceType('video');
+      console.log('📹 Video file selected:', file.name);
+    }
+  }, []);
 
-    const interval = setInterval(() => {
-      // 90% chance of normal, 10% chance of incident
-      const descriptions = Math.random() > 0.9 ? INCIDENT_DESCRIPTIONS : DEMO_DESCRIPTIONS;
-      const description = descriptions[Math.floor(Math.random() * descriptions.length)];
-      
-      setLastDescription(description);
-      sendDescription(description);
-    }, 3000); // Send every 3 seconds
+  // Initialize Overshoot
+  // Initialize Overshoot
+// Initialize Overshoot
+const overshootConfig = {
+  onDescription: handleOvershootDescription,
+  onError: handleOvershootError,
+  enabled: useOvershootMode && connected,
+  sourceType,
+  ...(videoFile && { videoFile }),
+};
 
-    return () => clearInterval(interval);
-  }, [connected, sendDescription]);
+const { isActive } = useOvershoot(overshootConfig);
 
   // Manual incident trigger for testing
   const triggerIncident = useCallback(() => {
     const incident = INCIDENT_DESCRIPTIONS[Math.floor(Math.random() * INCIDENT_DESCRIPTIONS.length)];
     setLastDescription(incident);
     sendDescription(incident);
-    
-    // Send a few more to fill the buffer
+
     setTimeout(() => sendDescription(incident + " Situation ongoing."), 1000);
     setTimeout(() => sendDescription(incident + " Emergency services may be needed."), 2000);
   }, [sendDescription]);
@@ -88,23 +74,18 @@ export default function CameraFeed({ cameraId, cameraName, isFullscreen = false 
     <div className={`relative bg-[#141414] border border-[#2a2a2a] rounded overflow-hidden ${
       isFullscreen ? 'h-full' : 'h-full min-h-[200px]'
     }`}>
-      {/* Video or placeholder */}
-      {hasCamera ? (
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className="w-full h-full object-cover"
-        />
-      ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a1a] to-[#0d0d0d] flex items-center justify-center">
-          <div className="text-center">
-            <div className="text-4xl mb-2 opacity-20">📹</div>
-            <div className="text-xs text-[#737373]">Demo Mode</div>
+      {/* Overshoot handles the camera internally, so we show a placeholder */}
+      <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a1a] to-[#0d0d0d] flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl mb-2 opacity-20">📹</div>
+          <div className="text-xs text-[#737373]">
+            {isActive ? (sourceType === 'video' ? 'Analyzing Video' : 'Overshoot Active') : 'Initializing...'}
           </div>
+          {videoFile && (
+            <div className="text-xs text-blue-400 mt-1">{videoFile.name}</div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Camera ID */}
       <div className="absolute top-3 left-3 flex items-center gap-2">
@@ -112,6 +93,11 @@ export default function CameraFeed({ cameraId, cameraName, isFullscreen = false 
         <span className="text-xs font-mono text-[#737373] uppercase tracking-wider">
           {cameraId}
         </span>
+        {isActive && (
+          <span className="text-xs text-blue-500 font-mono">
+            {sourceType === 'video' ? 'VIDEO' : 'OVERSHOOT'}
+          </span>
+        )}
       </div>
 
       {/* Recording indicator */}
@@ -122,13 +108,46 @@ export default function CameraFeed({ cameraId, cameraName, isFullscreen = false 
         </span>
       </div>
 
-      {/* Test button */}
-      <button
-        onClick={triggerIncident}
-        className="absolute top-3 right-16 px-2 py-1 bg-red-600/80 text-white text-xs rounded hover:bg-red-600"
-      >
-        Test Alert
-      </button>
+      {/* Control buttons */}
+      <div className="absolute top-3 right-16 flex items-center gap-2">
+        {/* Upload Video button */}
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="px-2 py-1 bg-blue-600/80 text-white text-xs rounded hover:bg-blue-600"
+        >
+          📁 Upload Video
+        </button>
+
+        {/* Switch to Camera button (if video is selected) */}
+        {videoFile && (
+          <button
+            onClick={() => {
+              setVideoFile(null);
+              setSourceType('camera');
+            }}
+            className="px-2 py-1 bg-gray-600/80 text-white text-xs rounded hover:bg-gray-600"
+          >
+            📷 Use Camera
+          </button>
+        )}
+
+        {/* Test Alert button */}
+        <button
+          onClick={triggerIncident}
+          className="px-2 py-1 bg-red-600/80 text-white text-xs rounded hover:bg-red-600"
+        >
+          Test Alert
+        </button>
+      </div>
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="video/*"
+        onChange={handleFileSelect}
+        className="hidden"
+      />
 
       {/* Info bar */}
       <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 to-transparent">
