@@ -14,19 +14,7 @@ export default function MobileCameraView({ cameraId }: MobileCameraViewProps) {
 
   const { connected, sendDescription } = useCameraSocket(cameraId);
 
-  // Handle Overshoot descriptions
-  const handleOvershootDescription = useCallback((description: string, timestamp: string) => {
-    setLastDescription(description);
-    setDescriptionCount(prev => prev + 1);
-    if (connected) {
-      sendDescription(description, timestamp);
-    }
-  }, [connected, sendDescription]);
-
-  const handleOvershootError = useCallback((error: Error) => {
-    console.error('Overshoot error:', error);
-    setError(error.message);
-  }, []);
+ 
 
   // Initialize Overshoot
   
