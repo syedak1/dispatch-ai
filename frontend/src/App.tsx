@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useDispatcherSocket } from './hooks/useWebSocket';
-import CameraFeed from './components/cameraFeed';
+import CameraFeed from './components/CameraFeed';
 import AlertPanel from './components/AlertPanel';
 import AlertModal from './components/AlertModal';
 import type { Alert, Camera } from '../src/types';
