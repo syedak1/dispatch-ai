@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Import services
+
 from app.services.orchestrator import classify_incident
 from app.agents.fire_agent import run_fire_agent
 from app.agents.ems_agent import run_ems_agent
@@ -159,10 +159,10 @@ async def process_buffer(cam_id: str):
     
     print(f"[{cam_id}] Processing {len(buf)} descriptions...")
     
-    # Compress
+
     compressed = await compress_text(raw) if HAS_COMPRESSION else raw
     
-    # Classify
+
     classification = await classify_incident(compressed)
     
     if classification.get("incident_type") == "NONE":
@@ -171,7 +171,7 @@ async def process_buffer(cam_id: str):
     
     print(f"[{cam_id}] EMERGENCY: {classification.get('incident_type')}")
     
-    # Run agents
+
     agents = classification.get("activate_agents", [])
     reports = {}
     
@@ -190,7 +190,7 @@ async def process_buffer(cam_id: str):
         if a not in reports:
             reports[a] = {"activated": False}
     
-    # Build alert
+
     inc_id = f"INC_{cam_id}_{int(datetime.now().timestamp())}"
     
     alert = {
