@@ -61,7 +61,7 @@ async def run_ems_agent(compressed_text: str) -> dict:
         
         result_text = response.text.strip()
         
-        # Clean up markdown formatting
+
         if "```json" in result_text:
             result_text = result_text.split("```json")[1].split("```")[0]
         elif "```" in result_text:
