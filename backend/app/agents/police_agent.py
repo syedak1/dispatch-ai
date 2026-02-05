@@ -69,7 +69,7 @@ async def run_police_agent(compressed_text: str) -> dict:
         return json.loads(result_text.strip())
         
     except json.JSONDecodeError as e:
-        print(f"⚠️ Police agent JSON error: {e}")
+        print(f"Police agent JSON error: {e}")
         return {
             "key_facts": ["Failed to parse response"],
             "hazards": [],
@@ -77,7 +77,7 @@ async def run_police_agent(compressed_text: str) -> dict:
             "unknowns": ["Response parsing failed"]
         }
     except Exception as e:
-        print(f"⚠️ Police agent error: {e}")
+        print(f"Police agent error: {e}")
         return {
             "key_facts": [f"Error: {str(e)}"],
             "hazards": [],
