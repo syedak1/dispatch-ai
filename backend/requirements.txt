@@ -10,8 +10,3 @@ aiofiles==24.1.0
 # AI Services
 google-genai==1.0.0
 
-# Optional - uncomment if you want these
-# token-company==0.1.0  # Replace with actual package name when available
-# arize-phoenix>=3.0.0,<4.0.0  # Phoenix tracing (if needed)
-# opentelemetry-api>=1.20.0
-# opentelemetry-sdk>=1.20.0
