@@ -60,7 +60,6 @@ async def run_fire_agent(compressed_text: str) -> dict:
         
         result_text = response.text.strip()
         
-        # Clean up markdown formatting
         if "```json" in result_text:
             result_text = result_text.split("```json")[1].split("```")[0]
         elif "```" in result_text:
@@ -69,7 +68,7 @@ async def run_fire_agent(compressed_text: str) -> dict:
         return json.loads(result_text.strip())
         
     except json.JSONDecodeError as e:
-        print(f"⚠️ Fire agent JSON error: {e}")
+        print(f" Fire agent JSON error: {e}")
         return {
             "key_facts": ["Failed to parse response"],
             "hazards": [],
@@ -77,7 +76,7 @@ async def run_fire_agent(compressed_text: str) -> dict:
             "unknowns": ["Response parsing failed"]
         }
     except Exception as e:
-        print(f"⚠️ Fire agent error: {e}")
+        print(f" Fire agent error: {e}")
         return {
             "key_facts": [f"Error: {str(e)}"],
             "hazards": [],
