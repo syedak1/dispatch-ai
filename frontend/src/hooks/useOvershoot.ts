@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
-// Types for Overshoot SDK
 interface OvershootResult {
   result: string;
   timestamp?: string;
@@ -14,18 +13,12 @@ interface UseOvershootConfig {
   videoFile?: File;
 }
 
-// Environment variables
 const OVERSHOOT_API_KEY = import.meta.env.VITE_OVERSHOOT_API_KEY || '';
 const OVERSHOOT_API_URL = import.meta.env.VITE_OVERSHOOT_API_URL || 'https://cluster1.overshoot.ai/api/v0.2';
 
-// Check if Overshoot SDK is available
 const hasOvershootSDK = () => typeof window !== 'undefined' && (window as any).RealtimeVision;
 
-/**
- * The prompt tells Overshoot WHAT TO LOOK FOR in the video.
- * 
- * CHANGE THIS to adjust what triggers alerts!
- */
+
 const OVERSHOOT_PROMPT = `Describe what you see in detail. Focus on:
 - People: count, actions, any signs of distress or injury
 - Vehicles: types, movements, any collisions or damage
@@ -35,9 +28,7 @@ const OVERSHOOT_PROMPT = `Describe what you see in detail. Focus on:
 
 Be factual and specific. Describe what you ACTUALLY SEE.`;
 
-/**
- * Mock descriptions for demo/testing
- */
+
 const MOCK_NORMAL_DESCRIPTIONS = [
   'Street scene with pedestrians walking on sidewalk. Light vehicle traffic. Normal activity.',
   'Parking lot view. Several parked cars. One person walking toward building entrance.',
